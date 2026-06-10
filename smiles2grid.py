@@ -18,6 +18,9 @@ Similarity mode:
     python smiles_grid.py scratch_Baricitinib_sim.out.20260530_0219.json \
         --query-smiles CCO --similarity 75
 
+Standard labeled JSON:
+    python smiles_grid.py input.json --standard-json
+
 Default mode:
     If no selection arguments are provided, the script prompts the user by
     default (you do not need to pass --prompt).
@@ -39,6 +42,7 @@ Command-line behavior
 - --similarity accepts either 0-100 or 0-1.
 - --range accepts all / ranges / comma-separated ranges.
 - --no-prompt disables prompts and uses command-line selection only.
+- --standard-json reads candidates as objects with `smiles` and `label`.
 - --max-pages is a debug option to render only the first N pages.
 - --label-prefix changes labels, default J -> J0001, J0002, ...
 - --output sets the PDF filename.
@@ -201,6 +205,22 @@ def extract_smiles_from_json(path: str) -> List[str]:
     return smiles_list
 
 
+def extract_labeled_candidates(path: str) -> List[Tuple[str, str]]:
+    with open(path, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+
+    items = []
+    candidates = data.get("candidates") if isinstance(data, dict) else None
+    if isinstance(candidates, list):
+        for item in candidates:
+            if isinstance(item, dict):
+                smi = item.get("smiles")
+                lab = item.get("label")
+                if isinstance(smi, str) and isinstance(lab, str):
+                    items.append((smi, lab))
+    return items
+
+
 def mol_properties(mol: Chem.Mol) -> Dict[str, Any]:
     return {
         "mw": round(Descriptors.MolWt(mol), 3),
@@ -230,6 +250,19 @@ def build_entries(smiles_list: Sequence[str]) -> List[MolEntry]:
     return entries
 
 
+def build_entries_labeled(labeled: Sequence[Tuple[str, str]]) -> List[MolEntry]:
+    entries: List[MolEntry] = []
+    for source_idx, (smiles, label) in enumerate(labeled, start=1):
+        mol = prepare_mol_from_smiles(smiles)
+        if mol is None:
+            continue
+        fp = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+        record = mol_properties(mol)
+        record["label"] = label
+        entries.append(MolEntry(original_index=len(entries) + 1, source_index=source_idx, smiles=smiles, mol=mol, fp=fp, record=record))
+    return entries
+
+
 def page_selection_chunks(entries: Sequence[MolEntry], page_size: int = ITEMS_PER_PAGE) -> List[List[MolEntry]]:
     return [list(entries[i:i + page_size]) for i in range(0, len(entries), page_size)]
 
@@ -245,6 +278,12 @@ def descriptor_lines(mol: Chem.Mol) -> List[str]:
 
 def format_label(prefix: str, n: int) -> str:
     return f"{prefix}{n:04d}"
+
+
+def entry_label(entry: MolEntry, prefix: str, use_json_labels: bool) -> str:
+    if use_json_labels and isinstance(entry.record.get("label"), str):
+        return entry.record["label"]
+    return format_label(prefix, entry.original_index)
 
 
 def parse_range_selection(text: str, max_index: int) -> List[int]:
@@ -435,6 +474,7 @@ def draw_cell(
     c: canvas.Canvas,
     entry: MolEntry,
     label_prefix: str,
+    use_json_labels: bool,
     x: float,
     y: float,
     w: float,
@@ -446,7 +486,7 @@ def draw_cell(
     c.setStrokeColor(colors.black)
     c.rect(x, y, w, h, stroke=1, fill=0)
 
-    label = format_label(label_prefix, entry.original_index)
+    label = entry_label(entry, label_prefix, use_json_labels)
     label_y = y + h - TOP_PAD
     c.setFont(LABEL_FONT, LABEL_SIZE)
     c.drawCentredString(x + w / 2.0, label_y, label)
@@ -518,7 +558,7 @@ def resolve_selection(entries: Sequence[MolEntry], args) -> Tuple[List[MolEntry]
     return chosen, "range/all selection"
 
 
-def write_csv(entries: Sequence[MolEntry], input_json: str, out_csv: str, pdf_name: str, mode: str) -> None:
+def write_csv(entries: Sequence[MolEntry], input_json: str, out_csv: str, pdf_name: str, mode: str, use_json_labels: bool) -> None:
     import csv
     fieldnames = [
         "output_index",
@@ -551,7 +591,7 @@ def write_csv(entries: Sequence[MolEntry], input_json: str, out_csv: str, pdf_na
                 "output_index": out_i,
                 "original_index": entry.original_index,
                 "source_index": entry.source_index,
-                "label": format_label(DEFAULT_LABEL_PREFIX, entry.original_index),
+                "label": entry_label(entry, DEFAULT_LABEL_PREFIX, use_json_labels),
                 "smiles": entry.smiles,
                 "can_smiles": Chem.MolToSmiles(entry.mol),
                 "input_json": input_json,
@@ -571,6 +611,7 @@ def main() -> None:
     parser.add_argument("--similarity", type=float, default=None, help="0-100 or 0-1")
     parser.add_argument("--range", dest="range_spec", default=None, help="Examples: all, 1-25, 50-75, 1,5,10-20")
     parser.add_argument("--prompt", action="store_true", help="Deprecated; prompts are now default")
+    parser.add_argument("--standard-json", action="store_true", help="Input JSON is a standard {candidates:[{smiles,label}]} format")
     parser.add_argument("--no-prompt", action="store_true", help="Disable interactive prompts")
     parser.add_argument("--max-pages", type=int, default=0, help="Debug: render only first N pages")
     args = parser.parse_args()
@@ -581,12 +622,19 @@ def main() -> None:
 
     print(f"Reading input JSON: {input_json}", flush=True)
     t0 = time.time()
-    smiles = extract_smiles_from_json(input_json)
-    print(f"Extracted {len(smiles)} candidate SMILES in JSON order", flush=True)
-    if not smiles:
-        raise SystemExit("No valid SMILES strings found in input JSON")
-
-    entries = build_entries(smiles)
+    use_standard = args.standard_json
+    labeled = extract_labeled_candidates(input_json) if use_standard else []
+    if use_standard:
+        print(f"Detected standard labeled JSON with {len(labeled)} candidates", flush=True)
+        if not labeled:
+            raise SystemExit("No labeled candidates found in standard JSON")
+        entries = build_entries_labeled(labeled)
+    else:
+        smiles = extract_smiles_from_json(input_json)
+        print(f"Extracted {len(smiles)} candidate SMILES in JSON order", flush=True)
+        if not smiles:
+            raise SystemExit("No valid SMILES strings found in input JSON")
+        entries = build_entries(smiles)
     print(f"Prepared {len(entries)} valid molecules", flush=True)
     if not entries:
         raise SystemExit("No renderable molecules produced from extracted SMILES")
@@ -620,12 +668,12 @@ def main() -> None:
             x = MARGIN + col * (cell_w + CELL_GAP)
             y = page_h - MARGIN - (row + 1) * cell_h - row * CELL_GAP
             bond_ids, atom_colors = highlights[idx]
-            draw_cell(c, entry, label_prefix, x, y, cell_w, cell_h, bond_ids, atom_colors)
+            draw_cell(c, entry, label_prefix, use_standard, x, y, cell_w, cell_h, bond_ids, atom_colors)
         c.showPage()
     c.save()
 
     out_csv = output_csv_name(input_json)
-    write_csv(selected_entries, input_json, out_csv, out_pdf, mode)
+    write_csv(selected_entries, input_json, out_csv, out_pdf, mode, use_standard)
 
     print(f"Wrote {out_pdf} with {len(selected_entries)} molecules in {time.time()-t0:.1f}s", flush=True)
     print(f"Wrote {out_csv}", flush=True)
