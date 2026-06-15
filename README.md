@@ -1,6 +1,22 @@
-# smiles_grid
+# ⚗️ smiles_grid
+
+> **Turn a JSON of SMILES into a paginated, property-annotated PDF grid with RDKit.**
+
+![python](https://img.shields.io/badge/python-3.9+-3776AB?logo=python&logoColor=white) ![RDKit](https://img.shields.io/badge/RDKit-depiction-00897B) ![output](https://img.shields.io/badge/output-PDF%20+%20CSV-467FF7) ![input](https://img.shields.io/badge/input-JSON%20SMILES-9b51e0) ![author](https://img.shields.io/badge/author-Marc%20C.%20Deller%2C%20D.Phil.-1C244B)
+
+<table>
+<tr>
+<td>🌐 <b>Website</b></td><td><a href="https://marcdeller.com" target="_blank" rel="noopener noreferrer">marcdeller.com</a></td>
+<td>✉️ <b>Contact</b></td><td><a href="mailto:marc@marcdeller.com">marc@marcdeller.com</a></td>
+<td>🐙 <b>GitHub</b></td><td><a href="https://github.com/bellcheddar/smiles2grid" target="_blank" rel="noopener noreferrer">bellcheddar/smiles2grid</a></td>
+</tr>
+</table>
+
+---
 
 Render SMILES strings from a JSON file into a paginated PDF grid using RDKit.
+
+Why it matters: after a generative or screening run you often have hundreds of SMILES and no fast way to actually look at them together, compare scaffolds, or pull a labelled subset for a slide. smiles_grid renders them into clean 5x5 PDF pages with structure labels tied to the original input order, computes a full property panel (MW, cLogP, HBD/HBA, TPSA, and more) into a companion CSV, and can highlight near-neighbours of a query structure in red. It is useful for medicinal chemists and computational scientists who need a quick, shareable visual of a compound set with the numbers attached: ideal for triage, SAR discussions, and decision-making meetings.
 
 ## What it does
 
@@ -142,3 +158,18 @@ pip install reportlab pillow cairosvg
 ## License
 
 Add your preferred license here.
+
+---
+
+## 👤 Author
+
+**Marc C. Deller, D.Phil.**  
+Structural biologist & drug discovery scientist  
+
+<table>
+<tr>
+<td>🌐</td><td><a href="https://marcdeller.com" target="_blank" rel="noopener noreferrer">marcdeller.com</a></td>
+<td>✉️</td><td><a href="mailto:marc@marcdeller.com">marc@marcdeller.com</a></td>
+<td>🐙</td><td><a href="https://github.com/bellcheddar/smiles2grid" target="_blank" rel="noopener noreferrer">github.com/bellcheddar/smiles2grid</a></td>
+</tr>
+</table>
